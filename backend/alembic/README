@@ -1,0 +1,9 @@
+Async Alembic migrations. The DATABASE_URL is read at runtime by
+``env.py`` from ``app.config.Settings`` (which loads the repo-root .env).
+
+Common commands (run from `backend/`):
+
+  uv run alembic upgrade head
+  uv run alembic revision -m "describe change"
+  uv run alembic revision --autogenerate -m "describe change"
+  uv run alembic downgrade -1

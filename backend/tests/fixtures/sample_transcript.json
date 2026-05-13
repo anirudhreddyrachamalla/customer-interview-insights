@@ -1,0 +1,55 @@
+{
+  "text": "Speaker A: Thanks for taking the time today. Can you walk me through how you currently track customer feedback? Speaker B: Honestly, it's a mess. We have feedback coming in from intercom, from sales calls, from support tickets, and nobody puts it in one place. I spend probably four hours a week just copying notes between Notion and a spreadsheet. Speaker A: That sounds painful. What's the worst part? Speaker B: The worst part is that by the time I've aggregated everything, the insight is stale. Last quarter we shipped a feature based on feedback that was two months old and three customers had already churned over it. I felt sick about that. Speaker A: Have you tried any tools to help? Speaker B: We tried Dovetail for a month but the team wouldn't actually use it. The upload step was too slow and tagging interviews took forever. We churned off it. Speaker A: Anything else that gets in the way? Speaker B: Yeah, our PM team is small, just me and one other person, and we don't have time to do proper research synthesis. So a lot of decisions get made on vibes. That scares me as we grow.",
+  "language_code": "en",
+  "duration_sec": 78.4,
+  "segments": [
+    {
+      "speaker": "A",
+      "start": 0.0,
+      "end": 6.2,
+      "text": "Thanks for taking the time today. Can you walk me through how you currently track customer feedback?"
+    },
+    {
+      "speaker": "B",
+      "start": 6.5,
+      "end": 24.1,
+      "text": "Honestly, it's a mess. We have feedback coming in from intercom, from sales calls, from support tickets, and nobody puts it in one place. I spend probably four hours a week just copying notes between Notion and a spreadsheet."
+    },
+    {
+      "speaker": "A",
+      "start": 24.5,
+      "end": 27.0,
+      "text": "That sounds painful. What's the worst part?"
+    },
+    {
+      "speaker": "B",
+      "start": 27.3,
+      "end": 46.9,
+      "text": "The worst part is that by the time I've aggregated everything, the insight is stale. Last quarter we shipped a feature based on feedback that was two months old and three customers had already churned over it. I felt sick about that."
+    },
+    {
+      "speaker": "A",
+      "start": 47.2,
+      "end": 49.4,
+      "text": "Have you tried any tools to help?"
+    },
+    {
+      "speaker": "B",
+      "start": 49.7,
+      "end": 61.1,
+      "text": "We tried Dovetail for a month but the team wouldn't actually use it. The upload step was too slow and tagging interviews took forever. We churned off it."
+    },
+    {
+      "speaker": "A",
+      "start": 61.4,
+      "end": 63.6,
+      "text": "Anything else that gets in the way?"
+    },
+    {
+      "speaker": "B",
+      "start": 63.9,
+      "end": 78.4,
+      "text": "Yeah, our PM team is small, just me and one other person, and we don't have time to do proper research synthesis. So a lot of decisions get made on vibes. That scares me as we grow."
+    }
+  ]
+}

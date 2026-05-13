@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Legacy src/ stub from `uv init` default layout — superseded by app/.
+# Kept around because rm was denied; ignored from VCS so it doesn't ship.
+src/
+
+# Audio uploads (local v0 storage)
+app/storage/audio/*
+!app/storage/audio/.gitkeep
+storage/audio/*
+!storage/audio/.gitkeep

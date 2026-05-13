@@ -1,0 +1,30 @@
+[
+  {
+    "text": "Feedback is fragmented across multiple tools, requiring manual aggregation.",
+    "supporting_quote": "We have feedback coming in from intercom, from sales calls, from support tickets, and nobody puts it in one place. I spend probably four hours a week just copying notes between Notion and a spreadsheet.",
+    "timestamp_start_sec": 6.5,
+    "timestamp_end_sec": 24.1,
+    "severity": 4
+  },
+  {
+    "text": "Slow synthesis means decisions are based on stale insights and customers churn.",
+    "supporting_quote": "Last quarter we shipped a feature based on feedback that was two months old and three customers had already churned over it. I felt sick about that.",
+    "timestamp_start_sec": 27.3,
+    "timestamp_end_sec": 46.9,
+    "severity": 5
+  },
+  {
+    "text": "Existing research tools have too much friction for the team to actually use.",
+    "supporting_quote": "We tried Dovetail for a month but the team wouldn't actually use it. The upload step was too slow and tagging interviews took forever. We churned off it.",
+    "timestamp_start_sec": 49.7,
+    "timestamp_end_sec": 61.1,
+    "severity": 3
+  },
+  {
+    "text": "Small PM team lacks bandwidth for proper synthesis, so decisions are made on vibes.",
+    "supporting_quote": "our PM team is small, just me and one other person, and we don't have time to do proper research synthesis. So a lot of decisions get made on vibes.",
+    "timestamp_start_sec": 63.9,
+    "timestamp_end_sec": 78.4,
+    "severity": 4
+  }
+]

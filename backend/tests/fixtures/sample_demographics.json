@@ -1,0 +1,10 @@
+{
+  "name": "Sample Interviewee",
+  "gender": "non_binary",
+  "age": 34,
+  "income": "100k_200k",
+  "marital_status": "married",
+  "country": "US",
+  "job_role": "product_manager",
+  "industry": "saas_software"
+}
