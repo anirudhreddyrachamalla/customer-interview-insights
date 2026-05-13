@@ -117,6 +117,42 @@ export const handlers = [
       { status: 202 },
     ),
   ),
+
+  // --- Project insights (v1.1) ----------------------------------------
+  http.get(`${API}/projects/:projectId/insights`, ({ params }) =>
+    HttpResponse.json({
+      project_id: params.projectId,
+      status: 'idle',
+      summary_markdown: null,
+      interview_count_summarised: 0,
+      interview_count_completed: 0,
+      is_stale: false,
+      error_message: null,
+      model: null,
+      generated_at: null,
+      updated_at: '2026-05-01T10:00:00Z',
+    }),
+  ),
+
+  http.post(
+    `${API}/projects/:projectId/insights/refresh`,
+    ({ params }) =>
+      HttpResponse.json(
+        {
+          project_id: params.projectId,
+          status: 'generating',
+          summary_markdown: null,
+          interview_count_summarised: 0,
+          interview_count_completed: 1,
+          is_stale: false,
+          error_message: null,
+          model: 'claude-sonnet-4-6',
+          generated_at: null,
+          updated_at: '2026-05-01T10:05:00Z',
+        },
+        { status: 202 },
+      ),
+  ),
 ];
 
 /**

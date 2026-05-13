@@ -3,23 +3,23 @@
 /**
  * Project detail — route `/projects/{id}`.
  *
- * Client component. In Next 15+ the `params` prop is a Promise that
- * must be unwrapped with React's `use()` hook in client components.
+ * v1.1 layout:
+ *   - 12-col grid on `lg+`; stacks on smaller screens.
+ *   - Left (col-4): compact list of interview rows showing only name,
+ *     gender, and StatusBadge. Each row is a `<Link>` to
+ *     `/interviews/{id}`.
+ *   - Right (col-8): the new `<ProjectInsightsPanel>` centerpane that
+ *     fetches + renders the Claude cross-interview summary.
  *
- * Renders:
- *   1. loading  → skeleton header + skeleton interview rows
- *   2. 404      → "Project not found" with a back link
- *   3. error    → generic error card with retry
- *   4. data     → project header, then an "Interviews" section that
- *                  lists each interview as a demographics-only card.
- *                  Clicking a card routes the user to /interviews/{id}
- *                  where the full transcript + pain points live.
+ * Loading / error / 404 states for the project itself are unchanged
+ * from v0; only the body has been reshuffled (see SPEC_v1.1 §3+4).
  */
 
 import Link from "next/link";
 import { use } from "react";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/interviews/StatusBadge";
+import { ProjectInsightsPanel } from "@/components/projects/ProjectInsightsPanel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,15 +31,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
 import { useProject, useProjectInterviews } from "@/lib/api/hooks";
-import type { Demographics, Interview } from "@/lib/api/types";
-import {
-  GENDER_OPTIONS,
-  INCOME_OPTIONS,
-  INDUSTRY_OPTIONS,
-  JOB_ROLE_OPTIONS,
-  MARITAL_STATUS_OPTIONS,
-  labelFor,
-} from "@/lib/options";
+import type { Interview } from "@/lib/api/types";
+import { GENDER_OPTIONS, labelFor } from "@/lib/options";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface ProjectDetailPageProps {
@@ -58,7 +51,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
   if (isLoading) {
     return (
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-8 py-12">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-8 py-12">
         <Skeleton className="h-9 w-1/2" />
         <Skeleton className="h-4 w-3/4" />
         <Card>
@@ -127,7 +120,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const created = formatRelativeTime(data.created_at);
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-8 py-12">
+    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-8 py-12">
       <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
         <Link href="/" className="hover:text-foreground">
           Projects
@@ -137,14 +130,27 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">{data.name}</CardTitle>
-          {data.description ? (
-            <CardDescription className="whitespace-pre-line">
-              {data.description}
-            </CardDescription>
-          ) : (
-            <CardDescription className="italic">No description</CardDescription>
-          )}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <CardTitle className="text-2xl">{data.name}</CardTitle>
+              {data.description ? (
+                <CardDescription className="whitespace-pre-line">
+                  {data.description}
+                </CardDescription>
+              ) : (
+                <CardDescription className="italic">
+                  No description
+                </CardDescription>
+              )}
+            </div>
+            <Button
+              render={
+                <Link href={`/projects/${data.id}/interviews/new`}>
+                  New Interview
+                </Link>
+              }
+            />
+          </div>
         </CardHeader>
         {created ? (
           <CardContent className="text-xs text-muted-foreground">
@@ -153,48 +159,59 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         ) : null}
       </Card>
 
-      <section className="flex flex-col gap-3">
-        <header className="flex items-center justify-between gap-4">
-          <h2 className="text-xl font-semibold tracking-tight">Interviews</h2>
-          <Button
-            render={
-              <Link href={`/projects/${data.id}/interviews/new`}>
-                New Interview
-              </Link>
-            }
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Left: compact interview list */}
+        <section
+          aria-label="Interviews"
+          className="flex flex-col gap-3 lg:col-span-4"
+        >
+          <header className="flex items-center justify-between gap-4">
+            <h2 className="text-base font-semibold tracking-tight">
+              Interviews
+            </h2>
+          </header>
+          <InterviewsList
+            projectId={data.id}
+            interviews={interviewsData?.items ?? null}
+            isLoading={interviewsLoading}
+            isError={interviewsError}
           />
-        </header>
+        </section>
 
-        <InterviewsSection
-          projectId={data.id}
-          interviews={interviewsData?.items ?? null}
-          isLoading={interviewsLoading}
-          isError={interviewsError}
-        />
-      </section>
+        {/* Right: insights centerpane */}
+        <section
+          aria-label="Project insights"
+          className="lg:col-span-8"
+        >
+          <ProjectInsightsPanel projectId={data.id} />
+        </section>
+      </div>
     </main>
   );
 }
 
-interface InterviewsSectionProps {
+interface InterviewsListProps {
   projectId: string;
   interviews: Interview[] | null;
   isLoading: boolean;
   isError: boolean;
 }
 
-function InterviewsSection({
+function InterviewsList({
   projectId,
   interviews,
   isLoading,
   isError,
-}: InterviewsSectionProps) {
+}: InterviewsListProps) {
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-3">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
+      <Card>
+        <CardContent className="flex flex-col gap-3 py-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
     );
   }
 
@@ -203,9 +220,7 @@ function InterviewsSection({
       <Card role="alert" className="items-center text-center">
         <CardHeader className="items-center">
           <CardTitle>Couldn&apos;t load interviews</CardTitle>
-          <CardDescription>
-            Refresh the page to try again.
-          </CardDescription>
+          <CardDescription>Refresh the page to try again.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -217,8 +232,8 @@ function InterviewsSection({
         <CardHeader className="items-center">
           <CardTitle>No interviews yet</CardTitle>
           <CardDescription>
-            Upload an audio recording to add the first interview to this
-            project.
+            Upload an audio recording or a transcript to add the first
+            interview.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center pb-4">
@@ -235,54 +250,41 @@ function InterviewsSection({
   }
 
   return (
-    <ul className="flex flex-col gap-3">
-      {interviews.map((interview) => (
-        <li key={interview.id}>
-          <InterviewDemographicsCard interview={interview} />
-        </li>
-      ))}
-    </ul>
+    <Card>
+      <ul
+        className="flex flex-col divide-y divide-border"
+        data-testid="interview-list"
+      >
+        {interviews.map((interview) => (
+          <li key={interview.id}>
+            <CompactInterviewRow interview={interview} />
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
-interface InterviewDemographicsCardProps {
+interface CompactInterviewRowProps {
   interview: Interview;
 }
 
-function InterviewDemographicsCard({
-  interview,
-}: InterviewDemographicsCardProps) {
-  const d: Demographics = interview.demographics;
-  const chips: { key: string; label: string }[] = [
-    { key: "age", label: `${d.age} yrs` },
-    { key: "gender", label: labelFor(GENDER_OPTIONS, d.gender) },
-    { key: "country", label: d.country },
-    {
-      key: "marital_status",
-      label: labelFor(MARITAL_STATUS_OPTIONS, d.marital_status),
-    },
-    { key: "job_role", label: labelFor(JOB_ROLE_OPTIONS, d.job_role) },
-    { key: "industry", label: labelFor(INDUSTRY_OPTIONS, d.industry) },
-    { key: "income", label: labelFor(INCOME_OPTIONS, d.income) },
-  ];
-
+function CompactInterviewRow({ interview }: CompactInterviewRowProps) {
+  const d = interview.demographics;
+  const genderLabel = labelFor(GENDER_OPTIONS, d.gender);
   return (
     <Link
       href={`/interviews/${interview.id}`}
-      className="block rounded-xl outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="flex items-center justify-between gap-3 px-4 py-3 outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/60"
+      data-testid={`interview-row-${interview.id}`}
     >
-      <Card className="hover:bg-muted/40">
-        <CardHeader>
-          <CardTitle className="text-base">{d.name}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-1.5 pb-4">
-          {chips.map((chip) => (
-            <Badge key={chip.key} variant="secondary">
-              {chip.label}
-            </Badge>
-          ))}
-        </CardContent>
-      </Card>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium text-foreground">
+          {d.name}
+        </span>
+        <span className="text-xs text-muted-foreground">{genderLabel}</span>
+      </div>
+      <StatusBadge status={interview.status} />
     </Link>
   );
 }

@@ -300,6 +300,170 @@ describe("UploadForm", () => {
     expect((formData as FormData).get("meeting_notes")).toBe(notesValue);
   });
 
+  describe("v1.1 transcript-file upload", () => {
+    function makeTranscriptFile(
+      name = "interview.vtt",
+      bytes = new Uint8Array([
+        87, 69, 66, 86, 84, 84, 10, 10, // "WEBVTT\n\n"
+      ]),
+    ): File {
+      return new File([bytes], name, { type: "text/vtt" });
+    }
+
+    it("defaults to the audio tab", () => {
+      renderForm();
+      // Audio picker is present, transcript picker is not.
+      expect(screen.getByLabelText(/audio file/i)).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/transcript file/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("swaps the file picker when the user toggles to Transcript", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      const transcriptTab = screen.getByRole("tab", {
+        name: /upload transcript/i,
+      });
+      await user.click(transcriptTab);
+
+      expect(screen.getByLabelText(/transcript file/i)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/audio file/i)).not.toBeInTheDocument();
+    });
+
+    it("does NOT surface the audio-only validation message when on the transcript tab", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      const transcriptTab = screen.getByRole("tab", {
+        name: /upload transcript/i,
+      });
+      await user.click(transcriptTab);
+
+      await user.click(
+        screen.getByRole("button", { name: /upload interview/i }),
+      );
+
+      // The audio-only "Please choose an audio file" message must NOT
+      // appear; the transcript-specific message should appear instead.
+      await screen.findByText(/please choose a transcript file/i);
+      expect(
+        screen.queryByText(/please choose an audio file/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("POSTs the multipart body with `transcript` (and no `audio`) on the transcript tab", async () => {
+      const user = userEvent.setup();
+
+      const spy = vi.spyOn(api, "postFormData").mockResolvedValue({
+        ...sampleInterview,
+        id: "new-interview-id",
+        source_kind: "transcript",
+        status: "uploaded",
+        transcript_text: null,
+        transcript_segments: null,
+        processed_at: null,
+        pain_points: [],
+      });
+
+      renderForm();
+
+      // Switch to the transcript tab.
+      const transcriptTab = screen.getByRole("tab", {
+        name: /upload transcript/i,
+      });
+      await user.click(transcriptTab);
+
+      // Transcript file picker is now visible.
+      const fileInput = screen.getByLabelText(
+        /transcript file/i,
+      ) as HTMLInputElement;
+      await user.upload(fileInput, makeTranscriptFile("chat.vtt"));
+
+      // Required demographics.
+      await user.type(screen.getByLabelText(/^name$/i), "Pat Researcher");
+      await user.type(screen.getByLabelText(/^age$/i), "37");
+      await user.type(screen.getByLabelText(/country/i), "us");
+
+      setHiddenSelectValue("gender", "female");
+      setHiddenSelectValue("income", "50k_100k");
+      setHiddenSelectValue("marital_status", "single");
+      setHiddenSelectValue("job_role", "product_manager");
+      setHiddenSelectValue("industry", "saas_software");
+      setHiddenSelectValue("type", "problem_validation");
+
+      await user.click(
+        screen.getByRole("button", { name: /upload interview/i }),
+      );
+
+      await waitFor(() => {
+        expect(pushMock).toHaveBeenCalledWith("/interviews/new-interview-id");
+      });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [path, formData] = spy.mock.calls[0];
+      expect(path).toBe("/projects/proj-123/interviews");
+
+      // EITHER/OR contract: the multipart body must carry `transcript`
+      // and must NOT carry `audio` when the user picked the transcript
+      // tab.
+      const transcript = (formData as FormData).get("transcript");
+      expect(transcript).toBeTruthy();
+      expect((transcript as File).name).toBe("chat.vtt");
+      expect((formData as FormData).has("audio")).toBe(false);
+    });
+
+    it("restricts the transcript file picker to .vtt via the accept attribute", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      const transcriptTab = screen.getByRole("tab", {
+        name: /upload transcript/i,
+      });
+      await user.click(transcriptTab);
+
+      const fileInput = screen.getByLabelText(
+        /transcript file/i,
+      ) as HTMLInputElement;
+      const accept = fileInput.getAttribute("accept") ?? "";
+      // The accept list shrank in v1.2 — `.txt` and `.srt` are gone.
+      expect(accept).toMatch(/\.vtt/);
+      expect(accept).not.toMatch(/\.txt/);
+      expect(accept).not.toMatch(/\.srt/);
+    });
+
+    it("rejects a .txt selection on the transcript tab with the v1.2 'Must be .vtt' copy", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      const transcriptTab = screen.getByRole("tab", {
+        name: /upload transcript/i,
+      });
+      await user.click(transcriptTab);
+
+      const fileInput = screen.getByLabelText(
+        /transcript file/i,
+      ) as HTMLInputElement;
+      // Force a .txt file through — userEvent.upload doesn't honour the
+      // browser-side `accept` filter, so this exercises the zod
+      // refinement directly.
+      const wrongFile = new File([new Uint8Array([97])], "wrong.txt", {
+        type: "text/plain",
+      });
+      await user.upload(fileInput, wrongFile);
+
+      await user.click(
+        screen.getByRole("button", { name: /upload interview/i }),
+      );
+
+      expect(
+        await screen.findByText(/must be \.vtt/i),
+      ).toBeInTheDocument();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("omits meeting_notes when empty", async () => {
     const user = userEvent.setup();
 

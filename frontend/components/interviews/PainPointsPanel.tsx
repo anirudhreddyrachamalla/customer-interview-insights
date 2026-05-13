@@ -18,6 +18,7 @@
  * activation.
  */
 
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -25,8 +26,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PAIN_POINT_TYPE_LABEL } from "@/lib/options";
 import { cn, formatTimestamp } from "@/lib/utils";
-import type { InterviewStatus, PainPoint } from "@/lib/api/types";
+import type { InterviewStatus, PainPoint, PainPointType } from "@/lib/api/types";
 
 export interface PainPointsPanelProps {
   painPoints: PainPoint[];
@@ -36,6 +38,22 @@ export interface PainPointsPanelProps {
   status?: InterviewStatus;
   onClickPainPoint?: (painPoint: PainPoint) => void;
   emptyMessage?: string;
+  /** When set, the panel only renders pain points of this type. Used by
+   *  the v1.2 interview-detail layout to drive the three single-type
+   *  columns (`pain_point` / `workaround` / `suggestion`). When unset,
+   *  the panel renders every type (v1.1 behaviour). */
+  type?: PainPointType;
+  /** When true, the per-card classification badge is hidden. The v1.2
+   *  detail page sets this on the single-type columns because the column
+   *  header already communicates the type. */
+  hideTypeBadge?: boolean;
+  /** When set, the header reads `<label> · <count>`. Used by the
+   *  detail-page columns to display the per-type count chip. */
+  count?: number;
+  /** Header label override. Defaults to "Pain points" for the all-types
+   *  mode; the v1.2 detail page passes "Pain points" / "Workarounds" /
+   *  "Suggestions" depending on the filter. */
+  title?: string;
 }
 
 /** Stable sort by severity DESC, then created_at ASC. */
@@ -51,15 +69,31 @@ export function PainPointsPanel({
   status,
   onClickPainPoint,
   emptyMessage,
+  type,
+  hideTypeBadge,
+  count,
+  title,
 }: PainPointsPanelProps) {
-  const sorted = sortPainPoints(painPoints);
+  const filtered = type ? painPoints.filter((pp) => pp.type === type) : painPoints;
+  const sorted = sortPainPoints(filtered);
+  const headerLabel = title ?? "Pain points";
 
   return (
-    <Card className="h-full">
+    <Card className="flex h-full min-h-0 flex-col">
       <CardHeader>
-        <CardTitle>Pain points</CardTitle>
+        <CardTitle className="flex items-baseline gap-2">
+          <span>{headerLabel}</span>
+          {typeof count === "number" ? (
+            <span
+              data-testid="pain-points-count"
+              className="text-xs font-normal text-muted-foreground"
+            >
+              · {count}
+            </span>
+          ) : null}
+        </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-h-0 flex-1 overflow-y-auto">
         {sorted.length > 0 ? (
           <ul className="flex flex-col gap-3">
             {sorted.map((pp) => (
@@ -67,6 +101,7 @@ export function PainPointsPanel({
                 key={pp.id}
                 painPoint={pp}
                 onClick={onClickPainPoint}
+                hideTypeBadge={hideTypeBadge}
               />
             ))}
           </ul>
@@ -103,9 +138,10 @@ export function PainPointsPanel({
 interface PainPointCardProps {
   painPoint: PainPoint;
   onClick?: (painPoint: PainPoint) => void;
+  hideTypeBadge?: boolean;
 }
 
-function PainPointCard({ painPoint, onClick }: PainPointCardProps) {
+function PainPointCard({ painPoint, onClick, hideTypeBadge }: PainPointCardProps) {
   const interactive = Boolean(onClick);
 
   function activate() {
@@ -146,6 +182,7 @@ function PainPointCard({ painPoint, onClick }: PainPointCardProps) {
           {formatTimestamp(painPoint.timestamp_end_sec)}
         </span>
       </div>
+      {hideTypeBadge ? null : <PainPointTypeBadge type={painPoint.type} />}
       <p className="text-sm font-medium leading-snug text-foreground">
         {painPoint.text}
       </p>
@@ -153,6 +190,26 @@ function PainPointCard({ painPoint, onClick }: PainPointCardProps) {
         “{painPoint.supporting_quote}”
       </blockquote>
     </li>
+  );
+}
+
+/** Renders the classification badge under the timestamp row. The default
+ *  `pain_point` type intentionally produces nothing — we don't want to
+ *  add badge noise to the common case (SPEC_v1.1 §1 UI). */
+function PainPointTypeBadge({ type }: { type: PainPointType | undefined }) {
+  if (!type || type === "pain_point") return null;
+  const label = PAIN_POINT_TYPE_LABEL[type] ?? type;
+  const variant = type === "workaround" ? "outline" : "destructive";
+  return (
+    <div>
+      <Badge
+        variant={variant}
+        data-pain-point-type={type}
+        data-testid="pain-point-type-badge"
+      >
+        {label}
+      </Badge>
+    </div>
   );
 }
 

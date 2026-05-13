@@ -104,4 +104,106 @@ describe("PainPointsPanel", () => {
     expect(onClickPainPoint).toHaveBeenCalledTimes(1);
     expect(onClickPainPoint).toHaveBeenCalledWith(painPoints[2]);
   });
+
+  describe("v1.2 single-type column props", () => {
+    it("filters painPoints to the given type", () => {
+      // samplePainPoints[0] is workaround, [2] is suggestion, [1] and
+      // [3] are pain_point.
+      render(
+        <PainPointsPanel
+          painPoints={painPoints}
+          status="completed"
+          type="workaround"
+        />,
+      );
+      // Only the workaround card should be in the DOM.
+      expect(
+        screen.getByTestId(`pain-point-${painPoints[0].id}`),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`pain-point-${painPoints[1].id}`),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`pain-point-${painPoints[2].id}`),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`pain-point-${painPoints[3].id}`),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the per-card type badge when hideTypeBadge is set", () => {
+      render(
+        <PainPointsPanel
+          painPoints={painPoints}
+          status="completed"
+          hideTypeBadge
+        />,
+      );
+      // Even the workaround/suggestion cards should not render a badge.
+      expect(
+        screen.queryByTestId("pain-point-type-badge"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders `· N` in the header when count is supplied", () => {
+      render(
+        <PainPointsPanel
+          painPoints={painPoints}
+          status="completed"
+          title="Workarounds"
+          count={3}
+        />,
+      );
+      const chip = screen.getByTestId("pain-points-count");
+      expect(chip).toBeInTheDocument();
+      expect(chip.textContent).toMatch(/·\s*3/);
+    });
+
+    it("respects the custom title prop in the header", () => {
+      render(
+        <PainPointsPanel
+          painPoints={painPoints}
+          status="completed"
+          title="Suggestions"
+        />,
+      );
+      expect(screen.getByText("Suggestions")).toBeInTheDocument();
+    });
+  });
+
+  describe("v1.1 classification badge", () => {
+    it("renders a Workaround badge for type='workaround'", () => {
+      // Fixture pain point [0] is tagged `workaround`.
+      render(<PainPointsPanel painPoints={painPoints} status="completed" />);
+      const card = screen.getByTestId(`pain-point-${painPoints[0].id}`);
+      const badge = within(card).getByText("Workaround");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveAttribute("data-pain-point-type", "workaround");
+    });
+
+    it("renders a Suggestion badge for type='suggestion'", () => {
+      // Fixture pain point [2] is tagged `suggestion`.
+      render(<PainPointsPanel painPoints={painPoints} status="completed" />);
+      const card = screen.getByTestId(`pain-point-${painPoints[2].id}`);
+      const badge = within(card).getByText("Suggestion");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveAttribute("data-pain-point-type", "suggestion");
+    });
+
+    it("does NOT render a classification badge for type='pain_point'", () => {
+      // Fixture pain points [1] and [3] are tagged `pain_point` — the
+      // default, no badge.
+      render(<PainPointsPanel painPoints={painPoints} status="completed" />);
+      const plainCard = screen.getByTestId(`pain-point-${painPoints[1].id}`);
+      expect(
+        within(plainCard).queryByText("Pain point"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(plainCard).queryByText("Workaround"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(plainCard).queryByText("Suggestion"),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

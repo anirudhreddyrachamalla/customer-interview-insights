@@ -3,5 +3,6 @@
 from app.models.interview import Interview
 from app.models.pain_point import PainPoint
 from app.models.project import Project
+from app.models.project_insight import ProjectInsight
 
-__all__ = ["Interview", "PainPoint", "Project"]
+__all__ = ["Interview", "PainPoint", "Project", "ProjectInsight"]

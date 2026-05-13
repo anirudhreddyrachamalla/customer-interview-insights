@@ -40,6 +40,7 @@ from app.schemas.demographics import DemographicsSchema
 from app.schemas.interview import (
     InterviewListResponse,
     InterviewRead,
+    InterviewSourceKind,
     InterviewStatus,
     InterviewType,
 )
@@ -65,6 +66,7 @@ _PROJECT_NOT_FOUND_TYPE = "https://interview-insights.local/problems/project-not
 _CONFLICT_TYPE = "https://interview-insights.local/problems/invalid-status-transition"
 _TOO_LARGE_TYPE = "https://interview-insights.local/problems/upload-too-large"
 _UNSUPPORTED_TYPE = "https://interview-insights.local/problems/unsupported-media-type"
+_NO_AUDIO_TYPE = "https://interview-insights.local/problems/no-audio-source"
 
 # Hard cap on meeting_notes (server-side). Locked by the team-lead in
 # the v0.1 feature spec — anything longer is rejected 422.
@@ -82,6 +84,7 @@ def _to_read_model(interview: Interview) -> InterviewRead:
         {
             "id": interview.id,
             "project_id": interview.project_id,
+            "source_kind": interview.source_kind,
             "audio_filename": interview.audio_filename,
             "audio_duration_sec": interview.audio_duration_sec,
             "type": interview.type,
@@ -202,14 +205,40 @@ def _parse_demographics(raw: str) -> DemographicsSchema:
 async def create_interview(
     project_id: uuid.UUID,
     background_tasks: BackgroundTasks,
-    audio: UploadFile = File(...),
     type: InterviewType = Form(...),  # noqa: A002 - matches the public field name
     demographics: str = Form(...),
+    audio: UploadFile | None = File(None),
+    transcript: UploadFile | None = File(None),
     meeting_notes: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ) -> InterviewRead:
-    """Create an interview row, persist the audio, kick off the pipeline."""
+    """Create an interview row, persist the upload, kick off the pipeline.
+
+    v1.1: accepts EITHER ``audio`` or ``transcript`` (exactly one).
+    Zero or both is a 422 with ``errors[0].loc == ["audio"]`` so the
+    frontend can render the message under the upload picker.
+    """
     await _require_project(db, project_id)
+
+    # Exactly-one-of validation. ``filename`` is the reliable presence
+    # signal — an absent multipart part can still arrive as a stub
+    # ``UploadFile`` with an empty filename.
+    has_audio = audio is not None and bool(audio.filename)
+    has_transcript = transcript is not None and bool(transcript.filename)
+    if has_audio == has_transcript:
+        raise ProblemDetail(
+            status_code=422,
+            title="Validation Error",
+            detail="exactly one of 'audio' or 'transcript' is required.",
+            type_=_VALIDATION_TYPE,
+            errors=[
+                {
+                    "loc": ["audio"],
+                    "msg": "exactly one of 'audio' or 'transcript' is required.",
+                    "type": "value_error.missing",
+                }
+            ],
+        )
 
     # Demographics validation. Done before touching disk so we don't
     # write a file we're about to reject.
@@ -221,7 +250,49 @@ async def create_interview(
 
     interview_id = uuid.uuid4()
 
-    # Audio upload — enforce mime + size + duration caps.
+    if has_audio:
+        assert audio is not None  # narrowed by has_audio
+        interview = await _create_audio_interview(
+            db,
+            project_id=project_id,
+            interview_id=interview_id,
+            audio=audio,
+            demographics_obj=demographics_obj,
+            type_=type,
+            meeting_notes_value=meeting_notes_value,
+        )
+    else:
+        assert transcript is not None
+        interview = await _create_transcript_interview(
+            db,
+            project_id=project_id,
+            interview_id=interview_id,
+            transcript=transcript,
+            demographics_obj=demographics_obj,
+            type_=type,
+            meeting_notes_value=meeting_notes_value,
+        )
+
+    # Re-load so the response carries an empty pain_points list (the
+    # service returns the row without the relationship populated).
+    interview = await _require_interview(db, interview.id)
+
+    background_tasks.add_task(run_pipeline, interview.id)
+
+    return _to_read_model(interview)
+
+
+async def _create_audio_interview(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    interview_id: uuid.UUID,
+    audio: UploadFile,
+    demographics_obj: DemographicsSchema,
+    type_: InterviewType,
+    meeting_notes_value: str | None,
+) -> Interview:
+    """Persist an audio-sourced upload + interview row."""
     try:
         audio_path = await audio_service.save_upload(audio, interview_id)
     except audio_service.UploadTooLargeError as exc:
@@ -244,8 +315,6 @@ async def create_interview(
 
     duration = audio_service.get_duration(audio_path)
     if duration is not None and duration > audio_service.MAX_DURATION_SEC:
-        # Clean up the on-disk file so we don't leak storage for a
-        # rejected upload.
         with contextlib.suppress(OSError):  # pragma: no cover
             audio_path.unlink(missing_ok=True)
         raise ProblemDetail(
@@ -258,25 +327,67 @@ async def create_interview(
             type_=_TOO_LARGE_TYPE,
         )
 
-    interview = await interviews_service.create_interview(
+    return await interviews_service.create_interview(
         db,
         project_id=project_id,
         interview_id=interview_id,
         demographics=demographics_obj,
-        type_=type,
+        type_=type_,
+        source_kind=InterviewSourceKind.audio,
         audio_path=str(audio_path),
         audio_filename=audio.filename or audio_path.name,
         audio_duration_sec=duration,
         meeting_notes=meeting_notes_value,
+        transcript_path=None,
     )
 
-    # Re-load so the response carries an empty pain_points list (the
-    # service returns the row without the relationship populated).
-    interview = await _require_interview(db, interview.id)
 
-    background_tasks.add_task(run_pipeline, interview.id)
+async def _create_transcript_interview(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    interview_id: uuid.UUID,
+    transcript: UploadFile,
+    demographics_obj: DemographicsSchema,
+    type_: InterviewType,
+    meeting_notes_value: str | None,
+) -> Interview:
+    """Persist a transcript-sourced upload + interview row."""
+    try:
+        transcript_path = await audio_service.save_transcript_upload(
+            transcript, interview_id
+        )
+    except audio_service.UploadTooLargeError as exc:
+        raise ProblemDetail(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            title="Payload Too Large",
+            detail=(
+                f"transcript upload exceeds the {audio_service.MAX_TRANSCRIPT_BYTES} "
+                f"byte limit (got {exc.size} bytes)."
+            ),
+            type_=_TOO_LARGE_TYPE,
+        ) from exc
+    except audio_service.UnsupportedAudioTypeError as exc:
+        raise ProblemDetail(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            title="Unsupported Media Type",
+            detail=exc.detail,
+            type_=_UNSUPPORTED_TYPE,
+        ) from exc
 
-    return _to_read_model(interview)
+    return await interviews_service.create_interview(
+        db,
+        project_id=project_id,
+        interview_id=interview_id,
+        demographics=demographics_obj,
+        type_=type_,
+        source_kind=InterviewSourceKind.transcript,
+        audio_path=None,
+        audio_filename=transcript.filename or transcript_path.name,
+        audio_duration_sec=None,
+        meeting_notes=meeting_notes_value,
+        transcript_path=str(transcript_path),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +475,24 @@ async def stream_audio(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     interview = await _require_interview(db, interview_id)
+    # v1.1: transcript-sourced interviews never have audio. Safety net
+    # for direct URL hits — the UI no longer shows the audio player for
+    # those rows.
+    if interview.source_kind is InterviewSourceKind.transcript:
+        raise ProblemDetail(
+            status_code=status.HTTP_404_NOT_FOUND,
+            title="Audio Not Found",
+            detail="this interview has no audio (source_kind = transcript).",
+            type_=_NO_AUDIO_TYPE,
+        )
+
+    if not interview.audio_path:
+        raise ProblemDetail(
+            status_code=status.HTTP_404_NOT_FOUND,
+            title="Audio Not Found",
+            detail=f"audio file for interview {interview_id} is missing on disk.",
+            type_=_NOT_FOUND_TYPE,
+        )
     audio_path = Path(interview.audio_path)
     if not audio_path.exists():
         raise ProblemDetail(

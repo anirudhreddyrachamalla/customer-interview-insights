@@ -497,9 +497,11 @@ async def test_extract_pain_points_happy_path(
             "timestamp_start_sec",
             "timestamp_end_sec",
             "severity",
+            "type",
         }
         assert 1 <= pp["severity"] <= 5
         assert len(pp["text"]) <= 500
+        assert pp["type"] in {"pain_point", "workaround", "suggestion"}
 
 
 async def test_extract_pain_points_sends_cache_control_on_system_block(
@@ -590,6 +592,7 @@ async def test_extract_pain_points_clamps_out_of_range_severity(
             "timestamp_start_sec": 0.0,
             "timestamp_end_sec": 1.0,
             "severity": 9,  # too high; clamp to 5
+            "type": "pain_point",
         },
         {
             "text": "B",
@@ -597,6 +600,7 @@ async def test_extract_pain_points_clamps_out_of_range_severity(
             "timestamp_start_sec": 1.0,
             "timestamp_end_sec": 2.0,
             "severity": 0,  # too low; clamp to 1
+            "type": "pain_point",
         },
         {
             "text": "C",
@@ -604,6 +608,7 @@ async def test_extract_pain_points_clamps_out_of_range_severity(
             "timestamp_start_sec": 2.0,
             "timestamp_end_sec": 3.0,
             "severity": 3,
+            "type": "pain_point",
         },
     ]
     _FakeAsyncAnthropic.next_response = _tool_use_response(pain_points)
@@ -643,6 +648,28 @@ def test_quote_match_rejects_substring_not_in_transcript():
     assert not pipeline_mod._quote_is_in_transcript("not here", "totally different text")
 
 
+def test_quote_match_survives_vtt_formatted_transcript_text():
+    """v1.2: transcript_text for a VTT-sourced interview is the formatted
+    string (cue blocks with ``[MM:SS - MM:SS] Speaker X`` headers + blank
+    lines between cues). A plain customer-words quote must still match
+    because ``_collapse`` lower-cases + flattens whitespace before the
+    substring check."""
+    formatted = (
+        "[00:00 - 00:06] Speaker A\n"
+        "Thanks for taking the time today.\n"
+        "\n"
+        "[00:06 - 00:24] Speaker B\n"
+        "I have to manually export the data every morning."
+    )
+    quote = "I have to manually export the data every morning."
+    assert pipeline_mod._quote_is_in_transcript(quote, formatted)
+    # And the quote case-insensitive variant also matches across the
+    # cue-header / speaker-prefix line breaks.
+    assert pipeline_mod._quote_is_in_transcript(
+        "I HAVE TO MANUALLY EXPORT THE DATA every morning.", formatted
+    )
+
+
 def test_render_transcript_uses_speaker_labels_and_mmss_timestamps(sample_transcript):
     rendered = extraction_mod._render_transcript(sample_transcript)
     assert "Speaker A [00:00-00:06]:" in rendered
@@ -660,6 +687,7 @@ def test_validate_pain_point_clamps_severity_high():
             "timestamp_start_sec": 0,
             "timestamp_end_sec": 1,
             "severity": 99,
+            "type": "pain_point",
         }
     )
     assert pp is not None
@@ -674,6 +702,7 @@ def test_validate_pain_point_rejects_overlong_text():
             "timestamp_start_sec": 0,
             "timestamp_end_sec": 1,
             "severity": 3,
+            "type": "pain_point",
         }
     )
     assert pp is None

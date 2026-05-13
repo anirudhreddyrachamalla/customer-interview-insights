@@ -17,6 +17,7 @@ Locked public contract (also mirrored by ``mock_extraction`` in
             "timestamp_start_sec": float,
             "timestamp_end_sec": float,
             "severity": int,                   # clamped to 1..5
+            "type": str,                       # "pain_point" | "workaround" | "suggestion"
         },
         ...
     ]
@@ -34,6 +35,7 @@ from typing import Any, cast
 import anthropic
 
 from app.config import get_settings
+from app.schemas.interview import PainPointType
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,10 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
 MAX_TEXT_CHARS = 500
 MIN_PAIN_POINTS = 3
+
+# Allowed values for the v1.1 ``type`` field, kept in sync with the
+# PG ENUM ``pain_point_type``.
+PAIN_POINT_TYPE_VALUES: frozenset[str] = frozenset(m.value for m in PainPointType)
 
 
 SYSTEM_PROMPT = (
@@ -59,7 +65,26 @@ SYSTEM_PROMPT = (
     "5. Severity is an integer 1 to 5 (1 = mild annoyance, 5 = severe / "
     "blocking the customer's work).\n"
     "6. Return 3 to 10 pain points. Always call the `record_pain_points` "
-    "tool exactly once; never reply with plain text."
+    "tool exactly once; never reply with plain text.\n"
+    "7. For each pain point, set `type`:\n"
+    "   - `workaround` if the customer described how they currently cope "
+    "with the pain — a manual process, another tool they pay for, a hack, "
+    "asking a colleague, copy-pasting between systems, etc. The "
+    "supporting_quote should be the customer describing the workaround "
+    "itself.\n"
+    "   - `suggestion` if the customer explicitly suggested or asked for "
+    "a feature or fix — \"I wish the app did X\", \"if only it could Y\", "
+    "\"I'd pay for Z\", \"I need this to be able to...\", or said something "
+    "would unblock them. The supporting_quote should be the customer's own "
+    "words proposing the fix.\n"
+    "   - `pain_point` otherwise. When the customer mentions the pain "
+    "without describing how they cope and without asking for a fix, use "
+    "`pain_point`. When in doubt, default to `pain_point`.\n"
+    "8. Try to capture workarounds and suggestions when they're present in "
+    "the transcript — they're the most valuable signal for product "
+    "decisions. If the customer described two separate workarounds for the "
+    "same pain, emit two pain points (each with its own quote and "
+    "timestamps) rather than merging them."
 )
 
 
@@ -115,6 +140,19 @@ TOOL_DEFINITION: dict[str, Any] = {
                             "maximum": 5,
                             "description": "Integer severity 1..5.",
                         },
+                        "type": {
+                            "type": "string",
+                            "enum": ["pain_point", "workaround", "suggestion"],
+                            "description": (
+                                "Classification: 'pain_point' = problem only, no "
+                                "workaround and no explicit ask; 'workaround' = "
+                                "customer described how they currently cope "
+                                "(manual process, another tool, a hack); "
+                                "'suggestion' = customer explicitly asked for / "
+                                "suggested / said they need a specific feature "
+                                "or fix."
+                            ),
+                        },
                     },
                     "required": [
                         "text",
@@ -122,6 +160,7 @@ TOOL_DEFINITION: dict[str, Any] = {
                         "timestamp_start_sec",
                         "timestamp_end_sec",
                         "severity",
+                        "type",
                     ],
                     "additionalProperties": False,
                 },
@@ -186,6 +225,24 @@ def _validate_pain_point(pp: dict[str, Any]) -> dict[str, Any] | None:
         )
         return None
 
+    # v1.1: ``type`` is required and must be one of the enum values.
+    # Missing / wrong-typed / unknown -> drop with a warning, matching
+    # the pattern used for the other fields.
+    type_raw = pp.get("type")
+    if not isinstance(type_raw, str):
+        logger.warning(
+            "dropping pain point with missing/non-string type: %r", pp
+        )
+        return None
+    type_value = type_raw.strip()
+    if type_value not in PAIN_POINT_TYPE_VALUES:
+        logger.warning(
+            "dropping pain point with unknown type %r (expected one of %s)",
+            type_value,
+            sorted(PAIN_POINT_TYPE_VALUES),
+        )
+        return None
+
     # Clamp severity defensively even though the schema bounds it 1..5.
     severity = max(1, min(5, severity_raw))
 
@@ -195,6 +252,7 @@ def _validate_pain_point(pp: dict[str, Any]) -> dict[str, Any] | None:
         "timestamp_start_sec": timestamp_start_sec,
         "timestamp_end_sec": timestamp_end_sec,
         "severity": severity,
+        "type": type_value,
     }
 
 

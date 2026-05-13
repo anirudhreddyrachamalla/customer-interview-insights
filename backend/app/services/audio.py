@@ -56,6 +56,22 @@ MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024
 # 90 minutes hard cap per SPEC.md.
 MAX_DURATION_SEC: float = 90 * 60.0
 
+# v1.2 transcript-upload limits — narrowed from v1.1's
+# ``.txt``/``.vtt``/``.srt`` triple to just ``.vtt`` (SPEC_v1.2.md
+# section 1, "Removed surfaces"). Some browsers / curl invocations
+# don't send a registered mime for ``.vtt`` — accept the generic fall-
+# backs (``text/plain``, ``application/octet-stream``) so the picker
+# isn't trapped behind a quirky mime sniff.
+ALLOWED_TRANSCRIPT_EXTENSIONS: frozenset[str] = frozenset({".vtt"})
+ALLOWED_TRANSCRIPT_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "text/vtt",
+        "text/plain",
+        "application/octet-stream",
+    }
+)
+MAX_TRANSCRIPT_BYTES: int = 5 * 1024 * 1024  # 5 MB
+
 # Streaming chunk size for Range responses (1 MiB).
 _CHUNK_SIZE: int = 1024 * 1024
 
@@ -97,6 +113,19 @@ def _resolved_storage_dir() -> Path:
         audio_dir = backend_root / audio_dir
     audio_dir.mkdir(parents=True, exist_ok=True)
     return audio_dir
+
+
+def _resolved_transcript_storage_dir() -> Path:
+    """Return the absolute path to the transcript storage directory.
+
+    Lives as a sibling of the audio storage directory
+    (``<audio_storage_dir>/../transcripts``) so the Render persistent
+    disk hosts both — see ``SPEC_v1.1.md`` section 2 (Storage).
+    """
+    audio_dir = _resolved_storage_dir()
+    transcript_dir = audio_dir.parent / "transcripts"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    return transcript_dir
 
 
 def _extension_for(filename: str | None) -> str:
@@ -168,6 +197,67 @@ async def save_upload(upload: UploadFile, interview_id: uuid.UUID) -> Path:
             dest.unlink(missing_ok=True)
         except OSError:  # pragma: no cover - filesystem race
             logger.warning("failed to delete oversized upload at %s", dest)
+        raise
+    finally:
+        await upload.close()
+
+    return dest
+
+
+async def save_transcript_upload(upload: UploadFile, interview_id: uuid.UUID) -> Path:
+    """Stream a transcript upload to ``<transcripts_dir>/<interview_id><ext>``.
+
+    Enforces the ``.vtt``-only allowlist + the 5 MB cap (v1.2; see
+    ``SPEC_v1.2.md`` section 1). Re-uses :class:`UploadTooLargeError`
+    and :class:`UnsupportedAudioTypeError` so the endpoint layer
+    doesn't have to discriminate by upload kind when mapping to
+    413 / 415.
+
+    Returns:
+        Absolute :class:`Path` to the persisted transcript.
+    """
+    filename = upload.filename
+    if not filename:
+        raise UnsupportedAudioTypeError("transcript upload has no filename")
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_TRANSCRIPT_EXTENSIONS:
+        raise UnsupportedAudioTypeError(
+            f"extension {ext!r} not allowed for transcript uploads; "
+            f"expected '.vtt'"
+        )
+
+    # Mime check is permissive but bounded. Browsers + curl frequently
+    # send ``text/plain`` or ``application/octet-stream`` for ``.vtt``
+    # because the extension isn't widely registered. An empty
+    # content-type slips through (some clients omit it for raw files).
+    content_type = upload.content_type
+    if content_type:
+        primary = content_type.split(";", 1)[0].strip().lower()
+        if primary and primary not in ALLOWED_TRANSCRIPT_MIME_TYPES:
+            raise UnsupportedAudioTypeError(
+                f"content-type {primary!r} not allowed for transcript uploads; "
+                f"expected one of {sorted(ALLOWED_TRANSCRIPT_MIME_TYPES)}"
+            )
+
+    storage_dir = _resolved_transcript_storage_dir()
+    dest = storage_dir / f"{interview_id}{ext}"
+
+    total = 0
+    try:
+        with dest.open("wb") as fh:
+            while True:
+                chunk = await upload.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_TRANSCRIPT_BYTES:
+                    raise UploadTooLargeError(total)
+                fh.write(chunk)
+    except UploadTooLargeError:
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:  # pragma: no cover - filesystem race
+            logger.warning("failed to delete oversized transcript at %s", dest)
         raise
     finally:
         await upload.close()

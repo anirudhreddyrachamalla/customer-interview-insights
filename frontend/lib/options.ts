@@ -21,6 +21,7 @@ import type {
   InterviewType,
   JobRole,
   MaritalStatus,
+  PainPointType,
 } from "@/lib/api/types";
 
 export interface SelectOption<TValue extends string> {
@@ -81,6 +82,16 @@ export const INDUSTRY_OPTIONS: readonly SelectOption<Industry>[] = [
 export const INTERVIEW_TYPE_OPTIONS: readonly SelectOption<InterviewType>[] = [
   { value: "problem_validation", label: "Problem validation" },
 ] as const;
+
+/** Human-readable labels for the pain-point classification badge. The
+ *  `pain_point` value is left in the map for completeness, but the UI
+ *  intentionally doesn't render a badge for it (it's the default and
+ *  badge noise isn't worth it — see SPEC_v1.1 §1 "UI"). */
+export const PAIN_POINT_TYPE_LABEL: Record<PainPointType, string> = {
+  pain_point: "Pain point",
+  workaround: "Workaround",
+  suggestion: "Suggestion",
+};
 
 /** Convenience lookup so labels can be rendered from a stored value
  *  elsewhere in the UI without re-importing the array. */

@@ -1,15 +1,17 @@
 /**
- * Generated API types.
+ * Curated API types — the app-facing names (`Project`, `Interview`,
+ * `PainPoint`, etc.) that components and hooks import.
  *
- * TODO: regenerate via `npm run gen:api` once the backend is running on
- * http://localhost:8000. Until then, the hand-written types below are
- * enough for the API client + hooks + pages to typecheck.
+ * These were validated against the regenerated OpenAPI schema in
+ * `./openapi-schema.ts` during the v1.1 gate-keeper pass. To regenerate
+ * the raw schema run `npm run gen:api` (requires `localhost:8000`) or
+ * use `backend/dump_openapi.py` + `npx openapi-typescript`.
  *
- * Keep these in sync with `SPEC.md`'s data model + the backend's
- * Pydantic schemas. When the real types are generated they'll fully
- * replace this file — code that imports `Project`, `Interview`, etc.
- * should keep working as long as the backend's OpenAPI schema names
- * match.
+ * If a backend schema field changes, update the matching interface
+ * below to match the corresponding `components["schemas"][...]` entry
+ * in `./openapi-schema.ts`. The two files are intentionally kept
+ * in sync — the curated names give component code a stable surface,
+ * and the generated schema gives a machine-checkable contract.
  */
 
 export type ProjectId = string;
@@ -24,6 +26,17 @@ export type InterviewStatus =
   | "failed";
 
 export type InterviewType = "problem_validation";
+
+/** Pain-point classification — added in v1.1. Claude tags each extracted
+ *  pain point with one of these three values. See SPEC_v1.1 §1. */
+export type PainPointType = "pain_point" | "workaround" | "suggestion";
+
+/** What the interview was created from — audio file vs. transcript file.
+ *  Added in v1.1 (see SPEC_v1.1 §2). Server-set at upload time. */
+export type InterviewSourceKind = "audio" | "transcript";
+
+/** Project-level Claude summary status. Added in v1.1 (see SPEC_v1.1 §3). */
+export type InsightStatus = "idle" | "generating" | "failed";
 
 export type Gender = "male" | "female" | "non_binary" | "prefer_not_to_say";
 
@@ -112,6 +125,9 @@ export interface PainPoint {
   timestamp_start_sec: number;
   timestamp_end_sec: number;
   severity: 1 | 2 | 3 | 4 | 5;
+  /** Classification of the pain point — added in v1.1. Existing rows
+   *  backfilled to `pain_point`; new rows are Claude-set. */
+  type: PainPointType;
   created_at: string;
 }
 
@@ -120,6 +136,9 @@ export interface Interview {
   project_id: ProjectId;
   audio_filename: string;
   audio_duration_sec: number | null;
+  /** v1.1 — `"audio"` for the existing flow, `"transcript"` when the
+   *  interview was created from an uploaded transcript file. */
+  source_kind: InterviewSourceKind;
   type: InterviewType;
   demographics: Demographics;
   transcript_text: string | null;
@@ -130,6 +149,26 @@ export interface Interview {
   pain_points: PainPoint[];
   created_at: string;
   processed_at: string | null;
+}
+
+/** Response body for `GET /projects/{id}/insights` and `POST .../refresh`.
+ *  Added in v1.1 (see SPEC_v1.1 §3). */
+export interface ProjectInsight {
+  project_id: ProjectId;
+  status: InsightStatus;
+  summary_markdown: string | null;
+  /** Number of interviews that were included the last time a summary
+   *  was generated. `0` before the first run. */
+  interview_count_summarised: number;
+  /** Current count of `completed` interviews on the project. */
+  interview_count_completed: number;
+  /** True when the set of completed interviews now differs from the
+   *  set that was summarised (count or ids). */
+  is_stale: boolean;
+  error_message: string | null;
+  model: string | null;
+  generated_at: string | null;
+  updated_at: string;
 }
 
 export interface ListResponse<T> {

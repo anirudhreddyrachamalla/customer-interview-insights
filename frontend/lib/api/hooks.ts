@@ -28,6 +28,7 @@ import type {
   Project,
   ProjectCreate,
   ProjectId,
+  ProjectInsight,
 } from "./types";
 
 /** Query key factory. Keep narrow + serialisable so cache invalidation
@@ -37,6 +38,8 @@ export const queryKeys = {
   project: (id: ProjectId) => ["projects", id] as const,
   projectInterviews: (id: ProjectId) =>
     ["projects", id, "interviews"] as const,
+  projectInsights: (id: ProjectId) =>
+    ["projects", id, "insights"] as const,
   interview: (id: InterviewId) => ["interviews", id] as const,
 };
 
@@ -117,6 +120,39 @@ export function useRetryInterview() {
       api.post<Interview>(`/interviews/${interviewId}/retry`),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.interview(data.id), data);
+    },
+  });
+}
+
+/** Fetch the project-level insight row. The backend returns a synthetic
+ *  `status='idle'` payload when no row exists yet, so consumers don't
+ *  have to handle a 404 for the "never generated" state.
+ *
+ *  Polls every 3s while `status === 'generating'` — same cadence as the
+ *  interview-detail page so the two queries feel symmetric. */
+export function useProjectInsights(projectId: ProjectId) {
+  return useQuery({
+    queryKey: queryKeys.projectInsights(projectId),
+    queryFn: () =>
+      api.get<ProjectInsight>(`/projects/${projectId}/insights`),
+    enabled: Boolean(projectId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "generating" ? 3000 : false;
+    },
+  });
+}
+
+/** Kick off a (re)generation of the project insight summary. Returns the
+ *  202 `generating` row, which we seed directly into the cache so the
+ *  polling hook starts ticking without an extra refetch. */
+export function useRefreshInsights(projectId: ProjectId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<ProjectInsight>(`/projects/${projectId}/insights/refresh`),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.projectInsights(projectId), data);
     },
   });
 }

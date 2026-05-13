@@ -135,6 +135,7 @@ export const samplePainPoints = [
     timestamp_start_sec: 6.5,
     timestamp_end_sec: 24.1,
     severity: 4,
+    type: 'workaround' as const,
     created_at: '2026-05-01T10:01:00Z',
   },
   {
@@ -146,6 +147,7 @@ export const samplePainPoints = [
     timestamp_start_sec: 27.3,
     timestamp_end_sec: 46.9,
     severity: 5,
+    type: 'pain_point' as const,
     created_at: '2026-05-01T10:01:01Z',
   },
   {
@@ -157,6 +159,7 @@ export const samplePainPoints = [
     timestamp_start_sec: 49.7,
     timestamp_end_sec: 61.1,
     severity: 3,
+    type: 'suggestion' as const,
     created_at: '2026-05-01T10:01:02Z',
   },
   {
@@ -168,6 +171,7 @@ export const samplePainPoints = [
     timestamp_start_sec: 63.9,
     timestamp_end_sec: 78.4,
     severity: 4,
+    type: 'pain_point' as const,
     created_at: '2026-05-01T10:01:03Z',
   },
 ];
@@ -177,6 +181,7 @@ const baseInterview = {
   project_id: sampleProject.id,
   audio_filename: 'sample_interview.m4a',
   audio_duration_sec: 78.4,
+  source_kind: 'audio' as const,
   type: 'problem_validation' as const,
   demographics: sampleDemographics,
   error_message: null as string | null,

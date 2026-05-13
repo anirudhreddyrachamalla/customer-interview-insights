@@ -9,7 +9,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-backend/storage/audio/
+backend/storage/
 
 # Node
 node_modules/
@@ -27,3 +27,4 @@ coverage/
 
 # Claude local
 .claude/settings.local.json
+/featureSpecFiles

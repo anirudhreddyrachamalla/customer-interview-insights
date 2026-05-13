@@ -21,9 +21,10 @@ from pathlib import Path
 
 from app.db import async_session_maker
 from app.models.interview import Interview
-from app.schemas.interview import InterviewStatus
+from app.schemas.interview import InterviewSourceKind, InterviewStatus
 from app.services import extraction as extraction_mod
 from app.services import interviews as interviews_service
+from app.services import transcript_parser as transcript_parser_mod
 from app.services import transcription as transcription_mod
 
 logger = logging.getLogger(__name__)
@@ -69,10 +70,35 @@ async def run_pipeline(interview_id: uuid.UUID) -> None:
                     db, interview, InterviewStatus.transcribing
                 )
 
-            audio_path = Path(interview.audio_path)
-            transcript = await transcription_mod.transcribe(audio_path)
+            if interview.source_kind is InterviewSourceKind.transcript:
+                # v1.1 — skip AssemblyAI; parse the uploaded transcript
+                # file into the canonical transcript dict.
+                if not interview.transcript_path:
+                    raise ValueError(
+                        "transcript-sourced interview is missing transcript_path"
+                    )
+                transcript_path = Path(interview.transcript_path)
+                transcript = transcript_parser_mod.parse(transcript_path)
+                # v1.2 — store the preprocessed formatted string (cue
+                # blocks with [MM:SS - MM:SS] Speaker X headers) so the
+                # detail page can render it verbatim. The plain-text
+                # ``text`` field stays in ``transcript`` for the
+                # extractor.
+                transcript_text = transcript_parser_mod.render_formatted(
+                    transcript_path
+                )
+            else:
+                if not interview.audio_path:
+                    raise ValueError(
+                        "audio-sourced interview is missing audio_path"
+                    )
+                audio_path = Path(interview.audio_path)
+                transcript = await transcription_mod.transcribe(audio_path)
+                # Audio branch unchanged: AssemblyAI plain concatenation
+                # is what we persist.
+                transcript_text = str(transcript.get("text") or "")
 
-            interview.transcript_text = str(transcript.get("text") or "")
+            interview.transcript_text = transcript_text
             interview.transcript_segments = transcript.get("segments")
             await db.commit()
             await db.refresh(interview)

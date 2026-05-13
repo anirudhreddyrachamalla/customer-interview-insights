@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.schemas.interview import InterviewStatus, InterviewType
+from app.schemas.interview import InterviewSourceKind, InterviewStatus, InterviewType
 
 if TYPE_CHECKING:
     from app.models.pain_point import PainPoint
@@ -41,6 +41,12 @@ interview_status_enum = PGEnum(
     values_callable=lambda enum_cls: [m.value for m in enum_cls],
     create_type=False,
 )
+interview_source_kind_enum = PGEnum(
+    InterviewSourceKind,
+    name="interview_source_kind",
+    values_callable=lambda enum_cls: [m.value for m in enum_cls],
+    create_type=False,
+)
 
 
 class Interview(Base):
@@ -51,6 +57,12 @@ class Interview(Base):
     and filename are stored here. ``transcript_text`` /
     ``transcript_segments`` / pain points are populated by the
     background pipeline (see ``app.services.pipeline``).
+
+    v1.1 added ``source_kind`` and ``transcript_path``; v1.2 narrows
+    the accepted transcript extension to ``.vtt``. When
+    ``source_kind == 'transcript'`` the upload is a ``.vtt`` file
+    rather than an audio file; ``audio_path`` is NULL in that case and
+    ``transcript_path`` carries the on-disk transcript location.
     """
 
     __tablename__ = "interviews"
@@ -67,9 +79,25 @@ class Interview(Base):
         index=True,
     )
 
-    audio_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # v1.1 — distinguishes audio vs. transcript uploads. Always set at
+    # upload time; never NULL after migration backfill.
+    source_kind: Mapped[InterviewSourceKind] = mapped_column(
+        interview_source_kind_enum,
+        nullable=False,
+        default=InterviewSourceKind.audio,
+        server_default=InterviewSourceKind.audio.value,
+    )
+
+    # NULL when ``source_kind='transcript'``. ``audio_filename`` keeps
+    # its name and carries the transcript filename for transcript
+    # uploads — see locked decision #3 in SPEC_v1.1.md.
+    audio_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     audio_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     audio_duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # v1.1 — absolute path of the uploaded transcript file when
+    # ``source_kind='transcript'``. NULL for ``source_kind='audio'``.
+    transcript_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     type: Mapped[InterviewType] = mapped_column(interview_type_enum, nullable=False)
     demographics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

@@ -38,6 +38,30 @@ class InterviewStatus(StrEnum):
     failed = "failed"
 
 
+class InterviewSourceKind(StrEnum):
+    """Whether the interview source on disk is audio or a parsed transcript.
+
+    v1.1 adds transcript-file uploads alongside audio. The pipeline
+    branches on this value (see ``app.services.pipeline.run_pipeline``).
+    """
+
+    audio = "audio"
+    transcript = "transcript"
+
+
+class PainPointType(StrEnum):
+    """Classification Claude assigns to each extracted pain point.
+
+    See ``SPEC_v1.1.md`` section 1 for the semantics. The default
+    (when the customer just described the problem) is ``pain_point``;
+    ``workaround`` and ``suggestion`` are the high-signal variants.
+    """
+
+    pain_point = "pain_point"
+    workaround = "workaround"
+    suggestion = "suggestion"
+
+
 class PainPointRead(BaseModel):
     """A single Claude-extracted pain point, embedded inside InterviewRead."""
 
@@ -49,6 +73,7 @@ class PainPointRead(BaseModel):
     timestamp_start_sec: float
     timestamp_end_sec: float
     severity: int = Field(ge=1, le=5)
+    type: PainPointType
     created_at: datetime
 
 
@@ -63,6 +88,7 @@ class InterviewRead(BaseModel):
 
     id: uuid.UUID
     project_id: uuid.UUID
+    source_kind: InterviewSourceKind
     audio_filename: str
     audio_duration_sec: float | None
     type: InterviewType

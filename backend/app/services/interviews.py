@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.models.interview import Interview
 from app.models.pain_point import PainPoint
 from app.schemas.demographics import DemographicsSchema
-from app.schemas.interview import InterviewStatus, InterviewType
+from app.schemas.interview import InterviewSourceKind, InterviewStatus, InterviewType
 
 
 class InvalidStatusTransitionError(Exception):
@@ -65,10 +65,12 @@ async def create_interview(
     interview_id: uuid.UUID,
     demographics: DemographicsSchema,
     type_: InterviewType,
-    audio_path: str,
+    audio_path: str | None,
     audio_filename: str,
     audio_duration_sec: float | None,
     meeting_notes: str | None = None,
+    source_kind: InterviewSourceKind = InterviewSourceKind.audio,
+    transcript_path: str | None = None,
 ) -> Interview:
     """Insert an ``Interview`` row in status ``uploaded`` and return it.
 
@@ -79,13 +81,19 @@ async def create_interview(
     ``meeting_notes`` must already be normalized by the caller (strip
     whitespace, empty -> ``None``, length-cap enforced). This service
     persists it as-is.
+
+    v1.1: ``source_kind`` defaults to ``audio`` so existing call sites
+    keep working. For transcript uploads, ``audio_path`` is ``None`` and
+    ``transcript_path`` carries the on-disk path.
     """
     interview = Interview(
         id=interview_id,
         project_id=project_id,
+        source_kind=source_kind,
         audio_path=audio_path,
         audio_filename=audio_filename,
         audio_duration_sec=audio_duration_sec,
+        transcript_path=transcript_path,
         type=type_,
         demographics=demographics.model_dump(mode="json"),
         meeting_notes=meeting_notes,
@@ -220,11 +228,19 @@ async def persist_pain_points(
     The caller is responsible for validating that supporting_quote
     text is present verbatim in the transcript before calling this.
     """
+    from app.schemas.interview import PainPointType
+
     rows: list[PainPoint] = []
     for pp in pain_points:
         # The pipeline validates pain-point shape upstream; coerce here
         # defensively in case the extraction stub or a test passes a
         # mixed-type dict.
+        type_raw = pp.get("type")
+        pp_type = (
+            PainPointType(type_raw)
+            if isinstance(type_raw, str) and type_raw in {m.value for m in PainPointType}
+            else PainPointType.pain_point
+        )
         rows.append(
             PainPoint(
                 interview_id=interview.id,
@@ -233,6 +249,7 @@ async def persist_pain_points(
                 timestamp_start_sec=float(str(pp["timestamp_start_sec"])),
                 timestamp_end_sec=float(str(pp["timestamp_end_sec"])),
                 severity=int(str(pp["severity"])),
+                type=pp_type,
             )
         )
     db.add_all(rows)
