@@ -374,7 +374,10 @@ async def test_transcribe_returns_canonical_dict(monkeypatch, patch_aai_settings
     cfg = _FakeTranscriber.last_config
     assert cfg.speaker_labels is True
     assert cfg.language_detection is True
-    assert cfg.speech_model == aai.SpeechModel.universal
+    # AssemblyAI deprecated the singular `speech_model` key — production code
+    # must use the plural `speech_models` list to avoid the API rejecting the
+    # request at submit time.
+    assert cfg.speech_models == [aai.SpeechModel.universal.value]
     assert _FakeTranscriber.last_audio_path == "/tmp/fake.m4a"
 
 

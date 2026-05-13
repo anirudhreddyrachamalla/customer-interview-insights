@@ -112,7 +112,7 @@ async def transcribe(audio_path: Path) -> dict[str, Any]:
     config = aai.TranscriptionConfig(
         speaker_labels=True,
         language_detection=True,
-        speech_model=aai.SpeechModel.universal,
+        speech_models=[aai.SpeechModel.universal.value],
     )
 
     def _run_blocking() -> aai.Transcript:
