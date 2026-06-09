@@ -59,7 +59,7 @@ export function DemographicsSummary({ demographics }: DemographicsSummaryProps) 
   ];
 
   return (
-    <Card>
+    <Card className="shrink-0">
       <CardHeader>
         <CardTitle>Interviewee</CardTitle>
       </CardHeader>

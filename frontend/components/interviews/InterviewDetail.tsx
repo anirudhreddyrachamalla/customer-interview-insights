@@ -61,6 +61,7 @@ import {
   POLLABLE_STATUSES,
   queryKeys,
   useInterview,
+  useProject,
 } from "@/lib/api/hooks";
 import type {
   Interview,
@@ -106,6 +107,7 @@ export function overlappingIndices(
 export function InterviewDetail({ interviewId }: InterviewDetailProps) {
   const { data, isLoading, isError, error, refetch, isFetching } =
     useInterview(interviewId);
+  const { data: project } = useProject(data?.project_id ?? "");
   const queryClient = useQueryClient();
 
   const transcriptPaneRef = useRef<TranscriptPaneHandle | null>(null);
@@ -271,7 +273,7 @@ export function InterviewDetail({ interviewId }: InterviewDetailProps) {
             href={`/projects/${data.project_id}`}
             className="hover:text-foreground"
           >
-            Project
+            {project?.name ?? "Project"}
           </Link>{" "}
           /{" "}
           <span className="text-foreground">{data.audio_filename}</span>

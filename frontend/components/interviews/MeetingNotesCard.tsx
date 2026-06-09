@@ -33,7 +33,7 @@ export function MeetingNotesCard({ meetingNotes }: MeetingNotesCardProps) {
     typeof meetingNotes === "string" && meetingNotes.trim().length > 0;
 
   return (
-    <Card>
+    <Card className="shrink-0">
       <CardHeader>
         <CardTitle>Meeting notes</CardTitle>
       </CardHeader>
