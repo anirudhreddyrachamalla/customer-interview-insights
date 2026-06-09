@@ -1,0 +1,32 @@
+# Files NOT shipped into the container image.
+
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Tests + fixtures stay on the dev box.
+tests/
+src/
+
+# Local-FS audio is a dev convenience; in prod we use Blob Storage.
+storage/
+
+# Local secrets (Azure App Service injects via app settings + Key Vault).
+.env
+.env.*
+
+# Tooling caches.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor + OS noise.
+.DS_Store
+.vscode/
+.idea/
+
+# Git + CI.
+.git/
+.github/

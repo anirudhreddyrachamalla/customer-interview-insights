@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,17 @@ class Settings(BaseSettings):
     assemblyai_api_key: str = ""
     anthropic_api_key: str = ""
     audio_storage_dir: Path = Path("storage/audio")
+
+    # Storage backend selection. ``local`` keeps the legacy filesystem
+    # behavior (used by tests + local dev). ``azure_blob`` swaps the
+    # audio + transcript persistence layer to Azure Blob Storage.
+    storage_backend: Literal["local", "azure_blob"] = "local"
+    azure_storage_account: str = ""
+    azure_storage_container_audio: str = "audio"
+    azure_storage_container_transcripts: str = "transcripts"
+
+    # Comma-separated origin allow-list for CORS. ``*`` means open.
+    cors_allow_origins: str = "*"
 
     @field_validator("database_url")
     @classmethod

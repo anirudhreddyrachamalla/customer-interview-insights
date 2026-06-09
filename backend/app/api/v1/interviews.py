@@ -14,7 +14,6 @@ logic lives in :mod:`app.services.interviews`.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import uuid
 from pathlib import Path
@@ -33,6 +32,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db import get_db
 from app.errors import ProblemDetail
 from app.models.interview import Interview
@@ -294,7 +294,7 @@ async def _create_audio_interview(
 ) -> Interview:
     """Persist an audio-sourced upload + interview row."""
     try:
-        audio_path = await audio_service.save_upload(audio, interview_id)
+        saved = await audio_service.save_upload(audio, interview_id)
     except audio_service.UploadTooLargeError as exc:
         raise ProblemDetail(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
@@ -313,19 +313,21 @@ async def _create_audio_interview(
             type_=_UNSUPPORTED_TYPE,
         ) from exc
 
-    duration = audio_service.get_duration(audio_path)
-    if duration is not None and duration > audio_service.MAX_DURATION_SEC:
-        with contextlib.suppress(OSError):  # pragma: no cover
-            audio_path.unlink(missing_ok=True)
-        raise ProblemDetail(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            title="Payload Too Large",
-            detail=(
-                f"audio duration {duration:.1f}s exceeds the "
-                f"{audio_service.MAX_DURATION_SEC:.0f}s limit."
-            ),
-            type_=_TOO_LARGE_TYPE,
-        )
+    try:
+        duration = audio_service.get_duration(saved.probe_path)
+        if duration is not None and duration > audio_service.MAX_DURATION_SEC:
+            await audio_service.delete_audio(saved)
+            raise ProblemDetail(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                title="Payload Too Large",
+                detail=(
+                    f"audio duration {duration:.1f}s exceeds the "
+                    f"{audio_service.MAX_DURATION_SEC:.0f}s limit."
+                ),
+                type_=_TOO_LARGE_TYPE,
+            )
+    finally:
+        audio_service.cleanup_temp(saved)
 
     return await interviews_service.create_interview(
         db,
@@ -334,8 +336,8 @@ async def _create_audio_interview(
         demographics=demographics_obj,
         type_=type_,
         source_kind=InterviewSourceKind.audio,
-        audio_path=str(audio_path),
-        audio_filename=audio.filename or audio_path.name,
+        audio_path=saved.key,
+        audio_filename=audio.filename or Path(saved.key).name,
         audio_duration_sec=duration,
         meeting_notes=meeting_notes_value,
         transcript_path=None,
@@ -354,9 +356,7 @@ async def _create_transcript_interview(
 ) -> Interview:
     """Persist a transcript-sourced upload + interview row."""
     try:
-        transcript_path = await audio_service.save_transcript_upload(
-            transcript, interview_id
-        )
+        saved = await audio_service.save_transcript_upload(transcript, interview_id)
     except audio_service.UploadTooLargeError as exc:
         raise ProblemDetail(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
@@ -375,6 +375,11 @@ async def _create_transcript_interview(
             type_=_UNSUPPORTED_TYPE,
         ) from exc
 
+    # In blob mode save_transcript_upload also materializes a local
+    # tempfile copy; we don't need it here (the pipeline re-fetches
+    # via transcript_view), so drop it now. No-op in local mode.
+    audio_service.cleanup_temp(saved)
+
     return await interviews_service.create_interview(
         db,
         project_id=project_id,
@@ -383,10 +388,10 @@ async def _create_transcript_interview(
         type_=type_,
         source_kind=InterviewSourceKind.transcript,
         audio_path=None,
-        audio_filename=transcript.filename or transcript_path.name,
+        audio_filename=transcript.filename or Path(saved.key).name,
         audio_duration_sec=None,
         meeting_notes=meeting_notes_value,
-        transcript_path=str(transcript_path),
+        transcript_path=saved.key,
     )
 
 
@@ -493,8 +498,13 @@ async def stream_audio(
             detail=f"audio file for interview {interview_id} is missing on disk.",
             type_=_NOT_FOUND_TYPE,
         )
-    audio_path = Path(interview.audio_path)
-    if not audio_path.exists():
+
+    # Local mode: ``audio_path`` is an absolute on-disk path — check it
+    # exists so a missing file returns 404 rather than crashing inside
+    # the streaming generator. Blob mode: the existence check happens
+    # implicitly via ``get_blob_size`` inside ``range_response``.
+    settings = get_settings()
+    if settings.storage_backend == "local" and not Path(interview.audio_path).exists():
         raise ProblemDetail(
             status_code=status.HTTP_404_NOT_FOUND,
             title="Audio Not Found",
@@ -502,5 +512,5 @@ async def stream_audio(
             type_=_NOT_FOUND_TYPE,
         )
 
-    mime = audio_service.content_type_for_path(audio_path)
-    return audio_service.range_response(audio_path, range, mime)
+    mime = audio_service.content_type_for_path(Path(interview.audio_path))
+    return await audio_service.range_response(interview.audio_path, range, mime)

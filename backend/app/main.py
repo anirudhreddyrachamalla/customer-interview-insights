@@ -20,15 +20,23 @@ from app.errors import register_error_handlers
 async def lifespan(app: FastAPI):
     """Ensure the audio storage directory exists before serving requests."""
     settings = get_settings()
-    audio_dir = settings.audio_storage_dir
-    if not audio_dir.is_absolute():
-        # Resolve relative to the backend/ working directory so a process
-        # launched from anywhere still writes into backend/storage/audio.
-        backend_root = Path(__file__).resolve().parent.parent
-        audio_dir = backend_root / audio_dir
-    audio_dir.mkdir(parents=True, exist_ok=True)
+    if settings.storage_backend == "local":
+        audio_dir = settings.audio_storage_dir
+        if not audio_dir.is_absolute():
+            # Resolve relative to the backend/ working directory so a process
+            # launched from anywhere still writes into backend/storage/audio.
+            backend_root = Path(__file__).resolve().parent.parent
+            audio_dir = backend_root / audio_dir
+        audio_dir.mkdir(parents=True, exist_ok=True)
     yield
 
+
+def _parse_cors_origins(raw: str) -> list[str]:
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return parts or ["*"]
+
+
+_settings = get_settings()
 
 app = FastAPI(
     title="interview-insights backend",
@@ -38,7 +46,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_parse_cors_origins(_settings.cors_allow_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
